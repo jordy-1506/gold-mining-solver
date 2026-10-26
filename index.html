@@ -1,0 +1,1081 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>금광 채굴 솔버</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💎</text></svg>">
+<style>
+:root {
+  --ink: #fbeedb;
+  --muted: #d3b28d;
+  --panel: rgba(38, 15, 6, 0.62);
+  --panel-edge: rgba(255, 220, 170, 0.10);
+  --tile: #2a140c;
+  --frame: #5b2a12;
+  --boardbg: #231009;
+  --cell-empty-a: #3a251b;
+  --cell-empty-b: #2e1c14;
+  --tan: #e9b987;
+  --danger: #ffb39c;
+  color-scheme: dark;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+html { scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 120px); }
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  margin: 0; color: var(--ink);
+  background: #4a210d linear-gradient(180deg, #92481b 0%, #66300f 40%, #3b1b09 100%) fixed;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  line-height: 1.5; -webkit-text-size-adjust: 100%;
+}
+main { max-width: 540px; margin: 0 auto; padding: 18px 14px 56px; display: flex; flex-direction: column; gap: 14px; }
+h1 { margin: 0; font-size: 1.45rem; font-weight: 800; letter-spacing: -0.01em; }
+.lede { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
+
+.panel { background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 16px; padding: 14px; }
+.ptitle { font-weight: 700; font-size: 0.92rem; margin-bottom: 10px; color: #f6dfbf; }
+.ptitle.big { font-size: 1.02rem; }
+.ptitle small { font-weight: 500; color: var(--muted); }
+
+.palette { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: #4d2410; box-shadow: 0 6px 14px rgba(0,0,0,0.25); }
+.brushes { display: flex; flex-wrap: wrap; gap: 8px; }
+.brush {
+  min-height: 40px; padding: 6px 14px; border-radius: 10px; border: 2px solid transparent;
+  font: inherit; font-weight: 700; font-size: 0.92rem; color: #fff; cursor: pointer;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.35);
+}
+.brush.bv0 { background: #6a5446; }
+.brush.bv1 { background: linear-gradient(160deg, #f6b676, #d9803f); }
+.brush.bv2 { background: linear-gradient(160deg, #6ec0ff, #2f8fe0); }
+.brush.bv3 { background: linear-gradient(160deg, #5fdb86, #26a653); }
+.brush.bv4 { background: linear-gradient(160deg, #ffd25f, #e8a21c); color: #4a2a05; text-shadow: none; }
+.brush.bv5 { background: linear-gradient(160deg, #ff82b8, #dd3f86); }
+.brush[aria-checked="true"] { border-color: #fff3d6; box-shadow: 0 0 0 2px rgba(255, 243, 214, 0.35); }
+
+/* 칸 공통 */
+:where(.cell, .pgrid button, .mini span) {
+  --c1: var(--cell-empty-a); --c2: var(--cell-empty-b);
+  position: relative; background: linear-gradient(160deg, var(--c1), var(--c2));
+}
+.v1 { --c1: #f6b676; --c2: #d9803f; }
+.v2 { --c1: #6ec0ff; --c2: #2f8fe0; }
+.v3 { --c1: #5fdb86; --c2: #26a653; }
+.v4 { --c1: #ffd25f; --c2: #e8a21c; }
+.v5 { --c1: #ff82b8; --c2: #dd3f86; }
+.cell.v1, .cell.v2, .cell.v3, .cell.v4, .cell.v5,
+.mini span.v1, .mini span.v2, .mini span.v3, .mini span.v4, .mini span.v5,
+.pgrid button.v1, .pgrid button.v2, .pgrid button.v3, .pgrid button.v4, .pgrid button.v5 {
+  box-shadow: inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -3px 0 rgba(0,0,0,0.18);
+}
+.g::before {
+  content: ""; position: absolute; inset: 24% 20%;
+  background: linear-gradient(180deg, #ffffff, #d9efff);
+  clip-path: polygon(22% 0, 78% 0, 100% 34%, 50% 100%, 0 34%);
+}
+
+.boardpanel { display: flex; justify-content: center; background: var(--frame); padding: 12px; border-radius: 18px; border: 0; box-shadow: inset 0 0 0 2px rgba(0,0,0,0.18); }
+.board {
+  --cell: min(44px, calc((100vw - 110px) / 8));
+  display: grid; grid-template-columns: repeat(8, var(--cell)); gap: 2px;
+  padding: 8px; background: var(--boardbg); border-radius: 10px; width: max-content;
+}
+.cell { height: var(--cell); border: 0; border-radius: 5px; padding: 0; cursor: pointer; }
+
+.pieces { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pc { background: var(--tile); border-radius: 12px; padding: 8px 8px 10px; }
+.pc-title { text-align: center; font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
+.pgrid { touch-action: none; user-select: none; -webkit-user-select: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; background: #8a5d40; padding: 2px; border-radius: 6px; }
+.pgrid button { aspect-ratio: 1; border: 0; border-radius: 2px; padding: 0; cursor: pointer; min-height: 16px; }
+.pgrid button:not(.v1):not(.v2):not(.v3):not(.v4):not(.v5) { --c1: #140905; --c2: #0e0603; }
+.pgrid button.v1 { --c1: #ffd7a3; --c2: #e88f3e; box-shadow: inset 0 0 0 2px #fff1d9; }
+.pc .clr { display: block; margin: 8px auto 0; background: none; border: 0; color: var(--muted); font: inherit; font-size: 0.78rem; text-decoration: underline; cursor: pointer; min-height: 28px; padding: 0 8px; }
+
+.goals { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 10px; }
+.gtile { background: var(--tile); border-radius: 12px; padding: 8px 6px 10px; text-align: center; }
+.gtile.wide { grid-column: 1 / -1; }
+.gtile .gl { font-size: 0.82rem; color: #f1d9b9; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.dia { width: 10px; height: 10px; transform: rotate(45deg); border-radius: 2px; display: inline-block; background: linear-gradient(160deg, var(--c1), var(--c2)); }
+.stp { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.stp button { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--tan); color: #4a2210; font-size: 1.25rem; font-weight: 800; line-height: 1; cursor: pointer; }
+.stp input { width: 44px; text-align: center; border: 0; background: transparent; color: #fff; font: inherit; font-size: 1.25rem; font-weight: 800; -moz-appearance: textfield; padding: 0; }
+.stp input::-webkit-outer-spin-button, .stp input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+button:focus-visible, input:focus-visible { outline: 3px solid #fff3d6; outline-offset: 2px; }
+
+.actions { display: flex; flex-direction: column; gap: 8px; }
+.btn { font: inherit; font-weight: 800; cursor: pointer; border-radius: 14px; min-height: 52px; border: 0; }
+.btn.primary { background: linear-gradient(180deg, #ffd25f, #e8a21c); color: #4a2a05; font-size: 1.05rem; box-shadow: 0 3px 0 rgba(0,0,0,0.25); }
+.btn.ghost { background: transparent; color: var(--muted); border: 1px solid rgba(255, 220, 170, 0.3); min-height: 40px; font-size: 0.88rem; font-weight: 600; }
+.btn:disabled { opacity: 0.6; cursor: progress; }
+.btn.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+#status { font-weight: 700; min-height: 1.5em; }
+#status.err { color: var(--danger); }
+.legend { font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
+.steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+.step { background: var(--tile); border-radius: 12px; padding: 10px; }
+.step h3 { margin: 0 0 8px; font-size: 0.9rem; }
+.mini { display: grid; gap: 1px; margin-bottom: 8px; background: var(--boardbg); padding: 2px; border-radius: 6px; }
+.mini span { aspect-ratio: 1; border-radius: 2px; }
+.mini span.n::after { content: ""; position: absolute; inset: 32%; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.55); z-index: 1; }
+.mini span.d { box-shadow: inset 0 0 0 2px #fff; }
+.step p { margin: 2px 0; font-size: 0.82rem; color: var(--muted); }
+.gains { display: flex; gap: 8px; flex-wrap: wrap; font-size: 0.85rem; margin-top: 4px; }
+.gains span { display: inline-flex; align-items: center; gap: 5px; }
+.note { font-size: 0.8rem; color: var(--muted); margin: 12px 0 0; }
+.cell.n::after { content: ""; position: absolute; inset: 32%; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.55); z-index: 1; }
+.cell.d { box-shadow: inset 0 0 0 3px #fff; }
+.pvwrap .cell { cursor: default; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.tab { min-height: 36px; padding: 4px 14px; border-radius: 999px; border: 1px solid rgba(255,220,170,0.35); background: transparent; color: var(--ink); font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--tan); color: #4a2210; border-color: var(--tan); }
+.pvcap { margin: 10px 0 12px; font-size: 0.88rem; color: var(--muted); }
+.ghw { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.gh { position: absolute; inset: 0; border-radius: 5px; opacity: 0.62; outline: 2px dashed rgba(255,255,255,0.95); outline-offset: -3px; background: linear-gradient(160deg, var(--c1), var(--c2)); }
+.gn { position: absolute; top: 2px; left: 2px; min-width: calc(var(--cell) * 0.5); height: calc(var(--cell) * 0.5); padding: 0 2px; border-radius: 999px; background: rgba(0,0,0,0.78); color: #fff; font-weight: 800; font-size: calc(var(--cell) * 0.34); line-height: 1; display: flex; align-items: center; justify-content: center; }
+.gh.s1 { clip-path: polygon(0 0, 100% 0, 0 100%); outline: 0; }
+.gh.s2 { clip-path: polygon(100% 0, 100% 100%, 0 100%); outline: 0; }
+.gn.b2 { top: auto; left: auto; right: 2px; bottom: 2px; }
+.clw { position: absolute; inset: 0; pointer-events: none; z-index: 3; border-radius: 5px; box-shadow: inset 0 0 0 2px #ffd85c, 0 0 6px rgba(255, 216, 92, 0.6); }
+.clx { position: absolute; left: 2px; bottom: 2px; padding: 0 4px; height: calc(var(--cell) * 0.4); border-radius: 999px; background: #ffd85c; color: #4a2a05; font-weight: 800; font-size: calc(var(--cell) * 0.26); line-height: 1; display: flex; align-items: center; white-space: nowrap; }
+.hrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.lang select { background: #3b1b09; color: var(--ink); border: 1px solid rgba(255, 220, 170, 0.35); border-radius: 10px; padding: 6px 10px; font: inherit; font-size: 0.85rem; min-height: 36px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ghostbar { background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.ghostbar[hidden] { display: none; }
+.gbtxt { font-weight: 700; font-size: 0.9rem; }
+.gbleg { font-size: 0.8rem; color: var(--muted); }
+.gbbtn { display: flex; gap: 8px; flex-wrap: wrap; }
+.gbbtn .btn { flex: 1 1 160px; min-height: 44px; }
+@media (prefers-reduced-motion: no-preference) {
+  .step { animation: drop 0.22s ease-out both; }
+  @keyframes drop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="hrow">
+      <h1 data-i18n="title">금광 채굴 솔버</h1>
+      <label class="lang"><span class="sr" data-i18n="langLabel">언어</span><select id="langSel" aria-label="Language"></select></label>
+    </div>
+    <p class="lede" data-i18n="lede">보드와 조각 3개, 남은 목표를 입력하면 가장 적은 이동으로 보석을 모으는 배치 순서를 찾아줘요. 조각은 회전하지 않는 것으로 계산하고, 게임 앱과는 연결되지 않아요.</p>
+  </header>
+
+  <div class="panel palette">
+    <div class="ptitle" data-i18n-html="paletteTitle">칠할 것 고르기 <small>· 보드와 조각 모두 같은 팔레트를 씁니다</small></div>
+    <div class="brushes" id="brushes" role="radiogroup" data-i18n-aria="brushAria" aria-label="칠하기 도구"></div>
+  </div>
+
+  <div class="panel boardpanel"><div class="board" id="board"></div></div>
+
+  <div class="ghostbar" id="ghostBar" hidden>
+    <div class="gbtxt" id="gbText"></div>
+    <div class="gbleg" data-i18n="legPlace">반투명 칸 = 추천 위치 &nbsp;·&nbsp; 숫자 = 놓는 순서</div>
+    <div class="gbleg" data-i18n="legClear">금색 테두리 = 그 줄이 ✕숫자 번째 조각을 놓은 뒤 지워져요</div>
+    <div class="gbleg" data-i18n="legSplit">칸이 대각선으로 나뉘면 왼쪽 위 숫자 조각이 먼저 놓였다가 지워지고, 오른쪽 아래 숫자 조각이 그 자리에 놓여요</div>
+    <div class="gbleg" id="gbNext" hidden></div>
+    <div class="gbbtn">
+      <button class="btn ghost" id="ghToggle" type="button">추천 숨기기</button>
+      <button class="btn primary" id="apply2" type="button" data-i18n="apply">추천대로 적용하고 다음 조각 입력</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="ptitle big" data-i18n="piecesTitle">하단 조각 3개</div>
+    <div class="pieces" id="pieces"></div>
+  </div>
+
+  <div class="panel">
+    <div class="ptitle" data-i18n-html="goalsTitle">클리어할 보석 개수 <small>· 게임마다 다르니 직접 맞춰 주세요 (없는 색은 0)</small></div>
+    <div class="goals" id="goals"></div>
+    <p class="note" style="margin-top:10px" data-i18n="goalsNote">목표를 다 채운 색(0이 된 색)의 보석은 블록으로 바뀌어요.</p>
+  </div>
+
+  <div class="actions">
+    <button class="btn primary" id="solve" type="button" data-i18n="solve">최적 배치 찾기</button>
+    <button class="btn ghost" id="reset" type="button" data-i18n="reset">예시로 되돌리기</button>
+    <button class="btn ghost" id="undo" type="button" data-i18n="undo" disabled>적용 되돌리기</button>
+  </div>
+
+  <div class="panel">
+    <div class="ptitle big" data-i18n="resultTitle">추천 배치</div>
+    <div id="status" role="status" aria-live="polite">입력을 마치고 &lsquo;최적 배치 찾기&rsquo;를 눌러 주세요.</div>
+    <div class="legend" id="legend" hidden data-i18n="legendRes">● 이번에 새로 놓는 칸 &nbsp;·&nbsp; 흰 테두리 칸 = 이 단계에서 지워지는 줄</div>
+    <div class="steps" id="steps"></div>
+    <div class="actions" id="applyBox" hidden style="margin-top:12px">
+      <button class="btn primary" id="apply" type="button" data-i18n="apply">추천대로 적용하고 다음 조각 입력</button>
+    </div>
+    <p class="note" data-i18n="resultNote">현재 보이는 조각들만 계산해요. 목표를 이번 조각들로 끝낼 수 있으면 가장 적은 조각으로 끝내는 순서를, 아니면 필요한 색 보석을 가장 많이 지우면서 다음 줄 완성이 가까워지는 순서를 추천해요. 맨 아래 &lsquo;지금까지 쓴 이동 수&rsquo;는 적용할 때마다 자동으로 쌓여요.</p>
+  </div>
+</main>
+
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var NC = 4, ROWS = 8, COLS = 8;
+
+  var I18N = {
+    ko: {
+      title: "금광 채굴 솔버", langLabel: "언어",
+      lede: "보드와 조각 3개, 남은 목표를 입력하면 가장 적은 이동으로 보석을 모으는 배치 순서를 찾아줘요. 조각은 회전하지 않는 것으로 계산하고, 게임 앱과는 연결되지 않아요.",
+      paletteTitle: "칠할 것 고르기 <small>· 보드와 조각 모두 같은 팔레트를 씁니다</small>",
+      brushAria: "칠하기 도구",
+      b0: "빈칸", b1: "블록", col0: "파랑", col1: "초록", col2: "금색", col3: "핑크",
+      legPlace: "반투명 칸 = 추천 위치 · 숫자 = 놓는 순서",
+      legClear: "금색 테두리 = 그 줄이 ✕숫자 번째 조각을 놓은 뒤 지워져요",
+      legSplit: "칸이 대각선으로 나뉘면 왼쪽 위 숫자 조각이 먼저 놓였다가 지워지고, 오른쪽 아래 숫자 조각이 그 자리에 놓여요",
+      hideRec: "추천 숨기기", showRec: "추천 다시 보기",
+      apply: "추천대로 적용하고 다음 조각 입력",
+      piecesTitle: "하단 조각 3개", pieceTitle: "{n}번 조각", clearPiece: "비우기",
+      goalsTitle: "클리어할 보석 개수 <small>· 게임마다 다르니 직접 맞춰 주세요 (없는 색은 0)</small>",
+      goalsNote: "목표를 다 채운 색(0이 된 색)의 보석은 블록으로 바뀌어요.",
+      movesUsed: "지금까지 쓴 이동 수", decr: "{l} 줄이기", incr: "{l} 늘리기", remAria: "{c} 남은 수",
+      solve: "최적 배치 찾기", reset: "예시로 되돌리기",
+      resultTitle: "추천 배치",
+      statusInit: "입력을 마치고 ‘최적 배치 찾기’를 눌러 주세요.",
+      legendRes: "● 이번에 새로 놓는 칸 · 흰 테두리 칸 = 이 단계에서 지워지는 줄",
+      resultNote: "현재 보이는 조각들만 계산해요. 목표를 이번 조각들로 끝낼 수 있으면 가장 적은 조각으로 끝내는 순서를, 아니면 필요한 색 보석을 가장 많이 지우면서 다음 줄 완성이 가까워지는 순서를 추천해요. ‘지금까지 쓴 이동 수’는 적용할 때마다 자동으로 쌓여요.",
+      stepTitle: "{n}번째 · {p}번 조각", stepPlace: "조각의 왼쪽 위를 {r}행 {c}열에 놓기", noClear: "줄 지우기 없음",
+      msgDone: "이 순서대로 놓으면 목표를 모두 채워요! (이번 이동 {u}번, 누적 {t}번)",
+      msgRemain: "이 순서대로 놓으면 남은 목표는 {parts}이에요. (이번 이동 {u}번, 누적 {t}번)",
+      msgSkip: " 나머지 조각은 놓을 필요가 없어요.", msgNoSpace: " 일부 조각은 놓을 자리가 없어요.",
+      msgTimeout: " (시간 제한으로 모든 경우를 확인하진 못했어요.)",
+      nextLines: "다음에 노릴 줄: {list}", hintRow: "{n}행", hintCol: "{n}열", hintFmt: "{label}({parts}, 빈 칸 {m}칸)",
+      cellAria: "{r}행 {c}열 {l}", pcellAria: "{i}번 조각 {r}행 {c}열 {l}",
+      errNoPiece: "조각을 하나 이상 그려 주세요.",
+      errNoPlace: "지금 보드에 놓을 수 있는 조각이 없어요. 보드와 조각 입력을 다시 확인해 보세요.",
+      calc: "계산 중이에요…", errCalc: "계산 중 오류가 발생했어요. 입력을 확인하고 다시 시도해 주세요.",
+      applied: "적용했어요. 게임에서 새로 나온 조각을 입력하고 다시 ‘최적 배치 찾기’를 눌러 주세요.",
+      undo: "적용 되돌리기", undone: "되돌렸어요."
+    },
+    en: {
+      title: "Gold Mining Solver", langLabel: "Language",
+      lede: "Enter the board, your 3 pieces and the remaining goals, and this tool finds the placement order that collects the gems in the fewest moves. Pieces are assumed not to rotate, and the tool is not connected to the game app.",
+      paletteTitle: "Pick what to paint <small>· The board and pieces share the same palette</small>",
+      brushAria: "Paint tool",
+      b0: "Empty", b1: "Block", col0: "Blue", col1: "Green", col2: "Gold", col3: "Pink",
+      legPlace: "Translucent cells = suggested spots · Number = placement order",
+      legClear: "Gold border = that line is cleared after placing piece ✕N",
+      legSplit: "A cell split diagonally: the upper-left number is placed first and then cleared, and the lower-right number is placed in that spot afterwards",
+      hideRec: "Hide suggestion", showRec: "Show suggestion again",
+      apply: "Apply and enter next pieces",
+      piecesTitle: "Bottom pieces (3)", pieceTitle: "Piece {n}", clearPiece: "Clear",
+      goalsTitle: "Gems left to clear <small>· Differs every game, so set it yourself (0 for unused colors)</small>",
+      goalsNote: "Gems of a color whose goal is complete (reached 0) turn into blocks.",
+      movesUsed: "Moves used so far", decr: "Decrease {l}", incr: "Increase {l}", remAria: "{c} remaining",
+      solve: "Find best placement", reset: "Reset to example",
+      resultTitle: "Suggested placement",
+      statusInit: "When you're done, press “Find best placement”.",
+      legendRes: "● Newly placed cell · White border = line cleared at this step",
+      resultNote: "Only the pieces currently shown are calculated. If the goals can be finished with these pieces, the order that uses the fewest pieces is suggested; otherwise it suggests the order that clears the most needed gems while bringing the next line closer to completion. “Moves used so far” grows automatically each time you apply a suggestion.",
+      stepTitle: "#{n} · Piece {p}", stepPlace: "Place the piece's top-left at row {r}, column {c}", noClear: "No line cleared",
+      msgDone: "Following this order completes all goals! ({u} moves this time, {t} in total)",
+      msgRemain: "After this order, the remaining goals are {parts}. ({u} moves this time, {t} in total)",
+      msgSkip: " You don't need to place the remaining pieces.", msgNoSpace: " Some pieces have no place to go.",
+      msgTimeout: " (Time limit reached, so not every case was checked.)",
+      nextLines: "Lines to aim for next: {list}", hintRow: "row {n}", hintCol: "column {n}", hintFmt: "{label} ({parts}, {m} empty)",
+      cellAria: "Row {r}, column {c}: {l}", pcellAria: "Piece {i}, row {r}, column {c}: {l}",
+      errNoPiece: "Please draw at least one piece.",
+      errNoPlace: "No piece can be placed on the current board. Please double-check the board and pieces.",
+      calc: "Calculating…", errCalc: "An error occurred while calculating. Check your input and try again.",
+      applied: "Applied. Enter the new pieces from the game and press “Find best placement” again.",
+      undo: "Undo last apply", undone: "Undone."
+    },
+    ja: {
+      title: "金鉱採掘ソルバー", langLabel: "言語",
+      lede: "ボードと3つのピース、残りの目標を入力すると、最も少ない手数で宝石を集める配置の順番を探します。ピースは回転しない前提で計算し、ゲームアプリとは連携していません。",
+      paletteTitle: "塗るものを選択 <small>· ボードとピースで同じパレットを使います</small>",
+      brushAria: "ペイントツール",
+      b0: "空き", b1: "ブロック", col0: "青", col1: "緑", col2: "金", col3: "ピンク",
+      legPlace: "半透明のマス = おすすめの位置 · 数字 = 置く順番",
+      legClear: "金色の枠 = ✕の数字番目のピースを置いた後にそのラインが消えます",
+      legSplit: "マスが斜めに分かれている場合、左上の数字のピースが先に置かれて消え、その後に右下の数字のピースがその場所に置かれます",
+      hideRec: "おすすめを隠す", showRec: "おすすめを再表示",
+      apply: "適用して次のピースを入力",
+      piecesTitle: "下のピース3つ", pieceTitle: "ピース{n}", clearPiece: "クリア",
+      goalsTitle: "クリアする宝石数 <small>· ゲームごとに違うので手動で合わせてください(使わない色は0)</small>",
+      goalsNote: "目標を達成した色(0になった色)の宝石はブロックに変わります。",
+      movesUsed: "ここまでに使った手数", decr: "{l}を減らす", incr: "{l}を増やす", remAria: "{c} 残り",
+      solve: "最適な配置を探す", reset: "例に戻す",
+      resultTitle: "おすすめの配置",
+      statusInit: "入力したら「最適な配置を探す」を押してください。",
+      legendRes: "● 今回新しく置くマス · 白い枠 = このステップで消えるライン",
+      resultNote: "現在表示されているピースだけを計算します。今回のピースで目標を達成できるなら最も少ないピース数で終わる順番を、できない場合は必要な色の宝石を最も多く消しつつ次のライン完成に近づく順番をおすすめします。「ここまでに使った手数」は適用するたびに自動で加算されます。",
+      stepTitle: "{n}番目 · ピース{p}", stepPlace: "ピースの左上を{r}行{c}列に置く", noClear: "ライン消去なし",
+      msgDone: "この順番で置くと目標をすべて達成できます!(今回{u}手、累計{t}手)",
+      msgRemain: "この順番で置くと残りの目標は{parts}です。(今回{u}手、累計{t}手)",
+      msgSkip: " 残りのピースは置く必要がありません。", msgNoSpace: " 置く場所がないピースがあります。",
+      msgTimeout: "(時間制限のため、すべてのケースは確認できませんでした。)",
+      nextLines: "次に狙うライン: {list}", hintRow: "{n}行目", hintCol: "{n}列目", hintFmt: "{label}({parts}、空き{m}マス)",
+      cellAria: "{r}行{c}列 {l}", pcellAria: "ピース{i} {r}行{c}列 {l}",
+      errNoPiece: "ピースを1つ以上描いてください。",
+      errNoPlace: "現在のボードに置けるピースがありません。ボードとピースの入力を確認してください。",
+      calc: "計算中です…", errCalc: "計算中にエラーが発生しました。入力を確認してもう一度お試しください。",
+      applied: "適用しました。ゲームで新しく出たピースを入力して、もう一度「最適な配置を探す」を押してください。",
+      undo: "適用を元に戻す", undone: "元に戻しました。"
+    },
+    zh: {
+      title: "金矿挖掘求解器", langLabel: "语言",
+      lede: "输入棋盘、3 个拼块和剩余目标,工具会找出用最少步数收集宝石的摆放顺序。拼块按不可旋转计算,且与游戏应用没有任何连接。",
+      paletteTitle: "选择要涂的内容 <small>· 棋盘和拼块使用同一调色板</small>",
+      brushAria: "绘制工具",
+      b0: "空格", b1: "方块", col0: "蓝色", col1: "绿色", col2: "金色", col3: "粉色",
+      legPlace: "半透明格 = 推荐位置 · 数字 = 摆放顺序",
+      legClear: "金色边框 = 该行/列会在放下第 ✕数字 块后被消除",
+      legSplit: "格子被对角线分开时:左上角数字的拼块先放下并被消除,之后右下角数字的拼块再放到该位置",
+      hideRec: "隐藏推荐", showRec: "重新显示推荐",
+      apply: "应用并输入下一批拼块",
+      piecesTitle: "底部 3 个拼块", pieceTitle: "拼块 {n}", clearPiece: "清空",
+      goalsTitle: "需要清除的宝石数 <small>· 每局不同,请手动设置(没有的颜色填 0)</small>",
+      goalsNote: "目标已完成(变为 0)的颜色的宝石会变成方块。",
+      movesUsed: "目前已用步数", decr: "减少{l}", incr: "增加{l}", remAria: "{c} 剩余",
+      solve: "查找最佳摆放", reset: "恢复示例",
+      resultTitle: "推荐摆放",
+      statusInit: "输入完成后,请点击“查找最佳摆放”。",
+      legendRes: "● 本步新放置的格子 · 白色边框 = 本步被消除的行/列",
+      resultNote: "只会计算当前显示的拼块。如果用这几块能完成目标,会推荐使用拼块最少的顺序;否则推荐能消除最多所需宝石、并让下一行/列更接近完成的顺序。“目前已用步数”会在每次应用推荐时自动累加。",
+      stepTitle: "第 {n} 步 · 拼块 {p}", stepPlace: "将拼块左上角放在第 {r} 行第 {c} 列", noClear: "无消除",
+      msgDone: "按此顺序摆放即可完成全部目标!(本次 {u} 步,累计 {t} 步)",
+      msgRemain: "按此顺序摆放后,剩余目标为 {parts}。(本次 {u} 步,累计 {t} 步)",
+      msgSkip: " 剩下的拼块不需要再放。", msgNoSpace: " 部分拼块没有可放置的位置。",
+      msgTimeout: "(受时间限制,未能检查所有情况。)",
+      nextLines: "下一步目标行/列: {list}", hintRow: "第 {n} 行", hintCol: "第 {n} 列", hintFmt: "{label}({parts},空 {m} 格)",
+      cellAria: "第{r}行第{c}列 {l}", pcellAria: "拼块{i} 第{r}行第{c}列 {l}",
+      errNoPiece: "请至少绘制一个拼块。",
+      errNoPlace: "当前棋盘上没有可以放置的拼块,请检查棋盘和拼块的输入。",
+      calc: "计算中…", errCalc: "计算时出错了,请检查输入后重试。",
+      applied: "已应用。请输入游戏中新出现的拼块,然后再次点击“查找最佳摆放”。",
+      undo: "撤销上次应用", undone: "已撤销。"
+    },
+    es: {
+      title: "Solucionador de Minería de Oro", langLabel: "Idioma",
+      lede: "Introduce el tablero, tus 3 piezas y los objetivos restantes, y la herramienta encuentra el orden de colocación que reúne las gemas en el menor número de movimientos. Se asume que las piezas no giran y la herramienta no está conectada con la aplicación del juego.",
+      paletteTitle: "Elige qué pintar <small>· El tablero y las piezas comparten la misma paleta</small>",
+      brushAria: "Herramienta de pintura",
+      b0: "Vacío", b1: "Bloque", col0: "Azul", col1: "Verde", col2: "Oro", col3: "Rosa",
+      legPlace: "Casillas translúcidas = posiciones sugeridas · Número = orden de colocación",
+      legClear: "Borde dorado = esa línea se elimina tras colocar la pieza ✕N",
+      legSplit: "Si una casilla está dividida en diagonal: el número de arriba a la izquierda se coloca primero y luego se elimina, y el número de abajo a la derecha se coloca después en ese lugar",
+      hideRec: "Ocultar sugerencia", showRec: "Mostrar sugerencia de nuevo",
+      apply: "Aplicar e introducir las siguientes piezas",
+      piecesTitle: "Piezas inferiores (3)", pieceTitle: "Pieza {n}", clearPiece: "Vaciar",
+      goalsTitle: "Gemas por eliminar <small>· Cambia en cada partida, así que ajústalo tú (0 para los colores que no se usan)</small>",
+      goalsNote: "Las gemas de un color cuyo objetivo está completo (llegó a 0) se convierten en bloques.",
+      movesUsed: "Movimientos usados hasta ahora", decr: "Reducir {l}", incr: "Aumentar {l}", remAria: "{c} restantes",
+      solve: "Buscar la mejor colocación", reset: "Restablecer ejemplo",
+      resultTitle: "Colocación sugerida",
+      statusInit: "Cuando termines, pulsa “Buscar la mejor colocación”.",
+      legendRes: "● Casilla recién colocada · Borde blanco = línea eliminada en este paso",
+      resultNote: "Solo se calculan las piezas que se muestran ahora. Si los objetivos se pueden completar con estas piezas, se sugiere el orden que usa menos piezas; si no, se sugiere el orden que elimina más gemas necesarias y acerca la siguiente línea a completarse. “Movimientos usados hasta ahora” aumenta automáticamente cada vez que aplicas una sugerencia.",
+      stepTitle: "n.º {n} · Pieza {p}", stepPlace: "Coloca la esquina superior izquierda de la pieza en la fila {r}, columna {c}", noClear: "Sin líneas eliminadas",
+      msgDone: "¡Siguiendo este orden se completan todos los objetivos! ({u} movimientos esta vez, {t} en total)",
+      msgRemain: "Tras este orden, los objetivos restantes son {parts}. ({u} movimientos esta vez, {t} en total)",
+      msgSkip: " No hace falta colocar las piezas restantes.", msgNoSpace: " Algunas piezas no tienen dónde colocarse.",
+      msgTimeout: " (Se alcanzó el límite de tiempo, así que no se comprobaron todos los casos.)",
+      nextLines: "Líneas a buscar a continuación: {list}", hintRow: "fila {n}", hintCol: "columna {n}", hintFmt: "{label} ({parts}, {m} vacías)",
+      cellAria: "Fila {r}, columna {c}: {l}", pcellAria: "Pieza {i}, fila {r}, columna {c}: {l}",
+      errNoPiece: "Dibuja al menos una pieza.",
+      errNoPlace: "No se puede colocar ninguna pieza en el tablero actual. Revisa el tablero y las piezas.",
+      calc: "Calculando…", errCalc: "Se produjo un error al calcular. Revisa los datos e inténtalo de nuevo.",
+      applied: "Aplicado. Introduce las piezas nuevas del juego y pulsa de nuevo “Buscar la mejor colocación”.",
+      undo: "Deshacer la última aplicación", undone: "Deshecho."
+    },
+    tr: {
+      title: "Altın Madenciliği Çözücü", langLabel: "Dil",
+      lede: "Tahtayı, 3 parçanı ve kalan hedefleri gir; araç, mücevherleri en az hamlede toplayan yerleştirme sırasını bulur. Parçaların dönmediği varsayılır ve araç oyun uygulamasına bağlı değildir.",
+      paletteTitle: "Neyi boyayacağını seç <small>· Tahta ve parçalar aynı paleti kullanır</small>",
+      brushAria: "Boyama aracı",
+      b0: "Boş", b1: "Blok", col0: "Mavi", col1: "Yeşil", col2: "Altın", col3: "Pembe",
+      legPlace: "Yarı saydam kareler = önerilen yerler · Sayı = yerleştirme sırası",
+      legClear: "Altın kenarlık = o satır/sütun ✕N numaralı parça yerleştirildikten sonra temizlenir",
+      legSplit: "Bir kare çapraz bölünmüşse: sol üstteki sayıya ait parça önce yerleştirilip temizlenir, ardından sağ alttaki sayıya ait parça o yere konur",
+      hideRec: "Öneriyi gizle", showRec: "Öneriyi tekrar göster",
+      apply: "Uygula ve sonraki parçaları gir",
+      piecesTitle: "Alt parçalar (3)", pieceTitle: "Parça {n}", clearPiece: "Temizle",
+      goalsTitle: "Temizlenecek mücevher sayısı <small>· Her oyunda değişir, kendin ayarla (kullanılmayan renkler için 0)</small>",
+      goalsNote: "Hedefi tamamlanan (0'a inen) rengin mücevherleri bloğa dönüşür.",
+      movesUsed: "Şimdiye kadar kullanılan hamle", decr: "{l} azalt", incr: "{l} artır", remAria: "{c} kalan",
+      solve: "En iyi yerleşimi bul", reset: "Örneğe sıfırla",
+      resultTitle: "Önerilen yerleşim",
+      statusInit: "İşin bitince “En iyi yerleşimi bul”a bas.",
+      legendRes: "● Yeni yerleştirilen kare · Beyaz kenarlık = bu adımda temizlenen satır/sütun",
+      resultNote: "Yalnızca şu an gösterilen parçalar hesaplanır. Hedefler bu parçalarla tamamlanabiliyorsa en az parça kullanan sıra önerilir; aksi halde gereken mücevherlerin en çoğunu temizleyen ve sonraki satırı tamamlamaya yaklaştıran sıra önerilir. “Şimdiye kadar kullanılan hamle”, her öneriyi uyguladığında otomatik artar.",
+      stepTitle: "{n}. adım · Parça {p}", stepPlace: "Parçanın sol üst köşesini {r}. satır, {c}. sütuna yerleştir", noClear: "Temizlenen satır yok",
+      msgDone: "Bu sırayla yerleştirirsen tüm hedefler tamamlanır! (bu sefer {u} hamle, toplam {t})",
+      msgRemain: "Bu sıradan sonra kalan hedefler: {parts}. (bu sefer {u} hamle, toplam {t})",
+      msgSkip: " Kalan parçaları yerleştirmene gerek yok.", msgNoSpace: " Bazı parçalar için yer yok.",
+      msgTimeout: " (Zaman sınırına ulaşıldı, bu yüzden tüm durumlar kontrol edilemedi.)",
+      nextLines: "Sıradaki hedef satırlar: {list}", hintRow: "{n}. satır", hintCol: "{n}. sütun", hintFmt: "{label} ({parts}, {m} boş)",
+      cellAria: "{r}. satır, {c}. sütun: {l}", pcellAria: "Parça {i}, {r}. satır, {c}. sütun: {l}",
+      errNoPiece: "Lütfen en az bir parça çiz.",
+      errNoPlace: "Mevcut tahtaya yerleştirilebilecek parça yok. Tahtayı ve parçaları kontrol et.",
+      calc: "Hesaplanıyor…", errCalc: "Hesaplama sırasında hata oluştu. Girdileri kontrol edip tekrar dene.",
+      applied: "Uygulandı. Oyunda çıkan yeni parçaları gir ve tekrar “En iyi yerleşimi bul”a bas.",
+      undo: "Son uygulamayı geri al", undone: "Geri alındı."
+    }
+  };
+  var LANGS = [['ko', '한국어'], ['en', 'English'], ['ja', '日本語'], ['zh', '简体中文'], ['es', 'Español'], ['tr', 'Türkçe']];
+  var lang = 'ko';
+  function t(key, vars) {
+    var s = (I18N[lang] && I18N[lang][key]) || I18N.en[key] || I18N.ko[key] || key;
+    if (vars) s = s.replace(/\{(\w+)\}/g, function (m, k) { return vars[k] != null ? vars[k] : m; });
+    return s;
+  }
+  function detectLang() {
+    var saved = null;
+    try { saved = localStorage.getItem('gms-lang'); } catch (e) { /* 저장소를 쓸 수 없어도 동작해요 */ }
+    if (saved && I18N[saved]) return saved;
+    var n = String(navigator.language || 'en').toLowerCase();
+    if (n.indexOf('ko') === 0) return 'ko';
+    if (n.indexOf('ja') === 0) return 'ja';
+    if (n.indexOf('zh') === 0) return 'zh';
+    if (n.indexOf('es') === 0) return 'es';
+    if (n.indexOf('tr') === 0) return 'tr';
+    return 'en';
+  }
+  var COLORS = [];
+  var BRUSH = [{ v: 0, label: '' }, { v: 1, label: '' }, { v: 2, label: '' }, { v: 3, label: '' }, { v: 4, label: '' }, { v: 5, label: '' }];
+  var state = { rows: ROWS, cols: COLS, need: [0, 5, 10, 5], moves: 0, rotate: false, brush: 1, board: [], pieces: [] };
+  var last = null;
+  var lastRes = null;
+  var ghostsOn = true;
+
+  function emptyPiece() { return Array.from({ length: 5 }, function () { return Array(5).fill(0); }); }
+  function pieceFrom(list) { var p = emptyPiece(); list.forEach(function (x) { p[x[0]][x[1]] = x[2]; }); return p; }
+
+  function initDefaults() {
+    state.board = Array.from({ length: ROWS }, function () { return Array(COLS).fill(0); });
+    state.board[3][3] = 4; state.board[3][4] = 3; state.board[4][2] = 5; state.board[4][5] = 1;
+    state.pieces = [
+      pieceFrom([[0,0,4],[1,0,1],[2,0,1],[2,1,1]]),
+      pieceFrom([[0,2,4],[1,0,1],[1,1,4],[1,2,1]]),
+      pieceFrom([[0,2,4],[1,0,1],[1,1,1],[1,2,1]])
+    ];
+  }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function cellClass(v) { return v ? 'v' + v + (v >= 2 ? ' g' : '') : ''; }
+
+  function renderBrushes() {
+    var host = $('#brushes');
+    host.innerHTML = '';
+    BRUSH.forEach(function (b) {
+      var btn = el('button', 'brush bv' + b.v, b.label);
+      btn.type = 'button'; btn.dataset.v = b.v;
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', state.brush === b.v ? 'true' : 'false');
+      host.appendChild(btn);
+    });
+  }
+
+  function stepper(key, value, label) {
+    var box = el('div', 'stp');
+    var minus = el('button', null, '\u2212');
+    minus.type = 'button'; minus.dataset.key = key; minus.dataset.d = -1;
+    minus.setAttribute('aria-label', t('decr', { l: label }));
+    var inp = el('input');
+    inp.type = 'number'; inp.min = 0; inp.inputMode = 'numeric'; inp.value = value;
+    inp.dataset.key = key; inp.setAttribute('aria-label', label);
+    var plus = el('button', null, '+');
+    plus.type = 'button'; plus.dataset.key = key; plus.dataset.d = 1;
+    plus.setAttribute('aria-label', t('incr', { l: label }));
+    box.appendChild(minus); box.appendChild(inp); box.appendChild(plus);
+    return box;
+  }
+
+  function renderGoals() {
+    var host = $('#goals');
+    host.innerHTML = '';
+    for (var k = 0; k < NC; k++) {
+      var tile = el('div', 'gtile');
+      var gl = el('div', 'gl');
+      gl.appendChild(el('i', 'dia v' + (k + 2)));
+      gl.appendChild(document.createTextNode(COLORS[k]));
+      tile.appendChild(gl);
+      tile.appendChild(stepper(String(k), state.need[k], t('remAria', { c: COLORS[k] })));
+      host.appendChild(tile);
+    }
+    var m = el('div', 'gtile wide');
+    m.appendChild(el('div', 'gl', t('movesUsed')));
+    m.appendChild(stepper('moves', state.moves, t('movesUsed')));
+    host.appendChild(m);
+  }
+
+  function renderBoard() {
+    var b = $('#board');
+    b.innerHTML = '';
+    var gmap = {}, cmark = {}, cfirst = {};
+    if (last && ghostsOn) last.steps.forEach(function (st, n) {
+      st.idx.forEach(function (k) { (gmap[k] = gmap[k] || []).push({ n: n + 1, v: st.placed[k], first: k === st.idx[0] }); });
+      st.dr.forEach(function (rr) {
+        for (var cc = 0; cc < COLS; cc++) cmark[rr * COLS + cc] = true;
+        (cfirst[rr * COLS] = cfirst[rr * COLS] || []).push(n + 1);
+      });
+      st.dc.forEach(function (cc) {
+        for (var rr = 0; rr < ROWS; rr++) cmark[rr * COLS + cc] = true;
+        (cfirst[cc] = cfirst[cc] || []).push(n + 1);
+      });
+    });
+    for (var r = 0; r < ROWS; r++) for (var c = 0; c < COLS; c++) {
+      var v = state.board[r][c];
+      var cell = el('button', 'cell ' + cellClass(v));
+      cell.type = 'button'; cell.dataset.r = r; cell.dataset.c = c;
+      cell.setAttribute('aria-label', t('cellAria', { r: r + 1, c: c + 1, l: BRUSH[v].label }));
+      var key = r * COLS + c, list = gmap[key];
+      if (list) {
+        var w = el('span', 'ghw');
+        if (list.length === 1) {
+          w.appendChild(el('span', 'gh ' + cellClass(list[0].v)));
+          if (list[0].first) w.appendChild(el('span', 'gn', String(list[0].n)));
+        } else {
+          var first = list[0], lastE = list[list.length - 1];
+          w.appendChild(el('span', 'gh s1 ' + cellClass(first.v)));
+          w.appendChild(el('span', 'gh s2 ' + cellClass(lastE.v)));
+          w.appendChild(el('span', 'gn', String(first.n)));
+          w.appendChild(el('span', 'gn b2', String(lastE.n)));
+        }
+        cell.appendChild(w);
+      }
+      if (cmark[key]) {
+        var cw = el('span', 'clw');
+        if (cfirst[key]) {
+          var seen = {};
+          var nums = cfirst[key].filter(function (x) { if (seen[x]) return false; seen[x] = true; return true; });
+          cw.appendChild(el('span', 'clx', '\u2715' + nums.join('\u00b7')));
+        }
+        cell.appendChild(cw);
+      }
+      b.appendChild(cell);
+    }
+  }
+
+  function renderPieces() {
+    var host = $('#pieces');
+    host.innerHTML = '';
+    state.pieces.forEach(function (p, i) {
+      var card = el('div', 'pc');
+      card.appendChild(el('div', 'pc-title', t('pieceTitle', { n: i + 1 })));
+      var g = el('div', 'pgrid');
+      for (var r = 0; r < 5; r++) for (var c = 0; c < 5; c++) {
+        var v = p[r][c];
+        var b = el('button', cellClass(v));
+        b.type = 'button'; b.dataset.i = i; b.dataset.r = r; b.dataset.c = c;
+        b.setAttribute('aria-label', t('pcellAria', { i: i + 1, r: r + 1, c: c + 1, l: BRUSH[v].label }));
+        g.appendChild(b);
+      }
+      card.appendChild(g);
+      var del = el('button', 'clr', t('clearPiece'));
+      del.type = 'button'; del.dataset.del = i;
+      card.appendChild(del);
+      host.appendChild(card);
+    });
+  }
+
+  function clampInt(v, lo, hi, fb) {
+    var n = parseInt(v, 10);
+    if (isNaN(n)) return fb;
+    return Math.max(lo, Math.min(hi, n));
+  }
+  var curStatusFn = function () { return t('statusInit'); }, curStatusErr = false;
+  function setStatusFn(fn, isErr) { curStatusFn = fn; curStatusErr = !!isErr; var s = $('#status'); s.textContent = fn(); s.className = isErr ? 'err' : ''; }
+  function setStatus(msg, isErr) { setStatusFn(function () { return msg; }, isErr); }
+  function refreshStatus() { setStatusFn(curStatusFn, curStatusErr); }
+  var STORE_KEY = 'gms-state';
+  function saveState() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ board: state.board, pieces: state.pieces, need: state.need, moves: state.moves }));
+    } catch (e) { /* 저장소를 쓸 수 없어도 동작해요 */ }
+  }
+  function validGrid(g, rows, cols) {
+    return Array.isArray(g) && g.length === rows && g.every(function (row) {
+      return Array.isArray(row) && row.length === cols && row.every(function (v) { return Number.isInteger(v) && v >= 0 && v <= 5; });
+    });
+  }
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return;
+      var d = JSON.parse(raw);
+      if (!validGrid(d.board, ROWS, COLS)) return;
+      if (!Array.isArray(d.pieces) || d.pieces.length !== 3 || !d.pieces.every(function (p) { return validGrid(p, 5, 5); })) return;
+      if (!Array.isArray(d.need) || d.need.length !== NC || !d.need.every(function (n) { return Number.isInteger(n) && n >= 0 && n <= 999; })) return;
+      if (!Number.isInteger(d.moves) || d.moves < 0) return;
+      state.board = d.board; state.pieces = d.pieces; state.need = d.need; state.moves = d.moves;
+    } catch (e) { /* 저장된 값이 잘못돼도 예시로 시작해요 */ }
+  }
+
+  var history = [];
+  function snap() { return JSON.parse(JSON.stringify({ board: state.board, pieces: state.pieces, need: state.need, moves: state.moves })); }
+  function updateUndo() { $('#undo').disabled = history.length === 0; }
+
+  function clearResult() {
+    saveState(); $('#steps').innerHTML = ''; $('#legend').hidden = true; $('#applyBox').hidden = true; $('#ghostBar').hidden = true; var had = !!last; last = null; lastRes = null; if (had) renderBoard(); }
+
+  // ---- 입력 이벤트 ----
+  $('#brushes').addEventListener('click', function (e) {
+    var b = e.target.closest('.brush');
+    if (!b) return;
+    state.brush = +b.dataset.v;
+    renderBrushes();
+  });
+
+  function convertColor(k) {
+    var changed = false, r, c, i;
+    for (r = 0; r < ROWS; r++) for (c = 0; c < COLS; c++) if (state.board[r][c] === k + 2) { state.board[r][c] = 1; changed = true; }
+    state.pieces.forEach(function (p) {
+      for (r = 0; r < 5; r++) for (c = 0; c < 5; c++) if (p[r][c] === k + 2) { p[r][c] = 1; changed = true; }
+    });
+    if (changed) { renderBoard(); renderPieces(); }
+  }
+  function setGoal(key, val) {
+    var n = clampInt(val, 0, 999, 0);
+    if (key === 'moves') { state.moves = n; saveState(); }
+    else {
+      state.need[+key] = n;
+      if (n === 0) convertColor(+key);
+      clearResult();
+    }
+    renderGoals();
+  }
+  $('#goals').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-d]');
+    if (!b) return;
+    var key = b.dataset.key;
+    var cur = key === 'moves' ? state.moves : state.need[+key];
+    setGoal(key, cur + (+b.dataset.d));
+  });
+  $('#goals').addEventListener('change', function (e) {
+    var inp = e.target;
+    if (inp.tagName === 'INPUT' && inp.dataset.key != null) setGoal(inp.dataset.key, inp.value);
+  });
+
+  $('#board').addEventListener('click', function (e) {
+    var cellEl = e.target.closest('.cell');
+    if (!cellEl) return;
+    var r = +cellEl.dataset.r, c = +cellEl.dataset.c;
+    var nv = state.board[r][c] === state.brush ? 0 : state.brush;
+    state.board[r][c] = nv;
+    cellEl.className = 'cell ' + cellClass(nv);
+    cellEl.setAttribute('aria-label', t('cellAria', { r: r + 1, c: c + 1, l: BRUSH[nv].label }));
+    clearResult();
+  });
+  var drag = null;
+  function paintPiece(btn, val) {
+    var i = +btn.dataset.i, r = +btn.dataset.r, c = +btn.dataset.c;
+    if (state.pieces[i][r][c] === val) return false;
+    state.pieces[i][r][c] = val;
+    btn.className = cellClass(val);
+    btn.setAttribute('aria-label', t('pcellAria', { i: i + 1, r: r + 1, c: c + 1, l: BRUSH[val].label }));
+    return true;
+  }
+  $('#pieces').addEventListener('pointerdown', function (e) {
+    var btn = e.target.closest('.pgrid button');
+    if (!btn) return;
+    e.preventDefault();
+    var i = +btn.dataset.i, r = +btn.dataset.r, c = +btn.dataset.c;
+    drag = { val: state.pieces[i][r][c] === state.brush ? 0 : state.brush, i: i };
+    if (paintPiece(btn, drag.val)) clearResult();
+    try { $('#pieces').setPointerCapture(e.pointerId); } catch (err) { /* 일부 브라우저는 캡처를 지원하지 않아요 */ }
+  });
+  $('#pieces').addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var under = document.elementFromPoint(e.clientX, e.clientY);
+    var btn = under && under.closest ? under.closest('.pgrid button') : null;
+    if (btn && +btn.dataset.i === drag.i && paintPiece(btn, drag.val)) clearResult();
+  });
+  function endDrag(e) {
+    if (!drag) return;
+    drag = null;
+    try { $('#pieces').releasePointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+  }
+  $('#pieces').addEventListener('pointerup', endDrag);
+  $('#pieces').addEventListener('pointercancel', endDrag);
+  $('#pieces').addEventListener('click', function (e) {
+    var d = e.target.closest('[data-del]');
+    if (d) { state.pieces[+d.dataset.del] = emptyPiece(); renderPieces(); clearResult(); return; }
+    var btn = e.target.closest('.pgrid button');
+    if (!btn || e.detail !== 0) return; // 마우스·터치는 pointerdown에서 처리, 키보드(Enter/Space)만 여기서 처리
+    var i = +btn.dataset.i, r = +btn.dataset.r, c = +btn.dataset.c;
+    if (paintPiece(btn, state.pieces[i][r][c] === state.brush ? 0 : state.brush)) clearResult();
+  });
+
+  $('#reset').addEventListener('click', function () {
+    initDefaults();
+    state.need = [0, 5, 10, 5]; state.moves = 0;
+    renderGoals(); renderBoard(); renderPieces(); clearResult();
+    setStatusFn(function () { return t('statusInit'); });
+  });
+
+  // ---- 솔버 ----
+  function normalize(cells) {
+    var minr = Infinity, minc = Infinity;
+    cells.forEach(function (x) { if (x[0] < minr) minr = x[0]; if (x[1] < minc) minc = x[1]; });
+    return cells.map(function (x) { return [x[0] - minr, x[1] - minc, x[2]]; })
+      .sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+  }
+  function orientations(cells, rotate) {
+    var seen = new Map(), cur = cells;
+    for (var k = 0; k < (rotate ? 4 : 1); k++) {
+      var n = normalize(cur), key = JSON.stringify(n);
+      if (!seen.has(key)) seen.set(key, n);
+      cur = cur.map(function (x) { return [x[1], -x[0], x[2]]; });
+    }
+    return Array.from(seen.values());
+  }
+  function shapeKey(cells, rotate) {
+    return orientations(cells, rotate).map(function (o) { return JSON.stringify(o); }).sort().join('#');
+  }
+
+  function solve() {
+    var R = state.rows, C = state.cols, N = R * C;
+    var need = state.need.slice();
+    var needTotal = 0, q0;
+    for (q0 = 0; q0 < NC; q0++) needTotal += need[q0];
+
+    var raw = [], orig = [];
+    state.pieces.forEach(function (p, i) {
+      var cells = [];
+      p.forEach(function (row, r) { row.forEach(function (v, c) { if (v) cells.push([r, c, (v >= 2 && need[v - 2] <= 0) ? 1 : v]); }); });
+      if (cells.length) { raw.push(cells); orig.push(i + 1); }
+    });
+    if (!raw.length) return { errKey: 'errNoPiece' };
+    var P = raw.length;
+
+    var plc = raw.map(function (cells) {
+      var outs = [];
+      orientations(cells, state.rotate).forEach(function (o, oi) {
+        var h = 1 + Math.max.apply(null, o.map(function (x) { return x[0]; }));
+        var w = 1 + Math.max.apply(null, o.map(function (x) { return x[1]; }));
+        for (var r0 = 0; r0 + h <= R; r0++) for (var c0 = 0; c0 + w <= C; c0++) {
+          var idx = o.map(function (x) { return (r0 + x[0]) * C + c0 + x[1]; });
+          var vals = o.map(function (x) { return x[2]; });
+          var rows = Array.from(new Set(o.map(function (x) { return r0 + x[0]; })));
+          var cols = Array.from(new Set(o.map(function (x) { return c0 + x[1]; })));
+          outs.push({ oi: oi, r0: r0, c0: c0, idx: idx, vals: vals, rows: rows, cols: cols });
+        }
+      });
+      return outs;
+    });
+    var keys = raw.map(function (cells) { return shapeKey(cells, state.rotate); });
+
+    var board0 = new Uint8Array(N);
+    for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) { var bv = state.board[r][c]; board0[r * C + c] = (bv >= 2 && need[bv - 2] <= 0) ? 1 : bv; }
+
+    function lineScore(m, contig, gems) {
+      if (m === 0 || m > 4) return 0;
+      var w = (5 - m) * (5 - m);
+      if (gems > 0) return gems * w * (contig ? 3 : 1.5);
+      return (m <= 2 && contig) ? (3 - m) * 4 : 0;
+    }
+    function setupScore(board, collected) {
+      var sc = 0, i, j, m, lo, hi, gems, v;
+      for (i = 0; i < R; i++) {
+        m = 0; lo = -1; hi = -1; gems = 0;
+        for (j = 0; j < C; j++) {
+          v = board[i * C + j];
+          if (!v) { m++; if (lo < 0) lo = j; hi = j; }
+          else if (v >= 2 && collected[v - 2] < need[v - 2]) gems++;
+        }
+        sc += lineScore(m, hi - lo + 1 === m, gems);
+      }
+      for (j = 0; j < C; j++) {
+        m = 0; lo = -1; hi = -1; gems = 0;
+        for (i = 0; i < R; i++) {
+          v = board[i * C + j];
+          if (!v) { m++; if (lo < 0) lo = i; hi = i; }
+          else if (v >= 2 && collected[v - 2] < need[v - 2]) gems++;
+        }
+        sc += lineScore(m, hi - lo + 1 === m, gems);
+      }
+      return sc;
+    }
+
+    function nextHints(board, collected) {
+      var list = [], i, j, m, lo, hi, v, counts, gems;
+      function add(kind, n2, m2, contig, counts2, gems2) {
+        if (m2 > 0 && m2 <= 4 && gems2 > 0) {
+          list.push({ kind: kind, n: n2, m: m2, counts: counts2.slice(), sc: lineScore(m2, contig, gems2) });
+        }
+      }
+      for (i = 0; i < R; i++) {
+        m = 0; lo = -1; hi = -1; gems = 0; counts = [0, 0, 0, 0];
+        for (j = 0; j < C; j++) {
+          v = board[i * C + j];
+          if (!v) { m++; if (lo < 0) lo = j; hi = j; }
+          else if (v >= 2 && collected[v - 2] < need[v - 2]) { counts[v - 2]++; gems++; }
+        }
+        add('row', i + 1, m, hi - lo + 1 === m, counts, gems);
+      }
+      for (j = 0; j < C; j++) {
+        m = 0; lo = -1; hi = -1; gems = 0; counts = [0, 0, 0, 0];
+        for (i = 0; i < R; i++) {
+          v = board[i * C + j];
+          if (!v) { m++; if (lo < 0) lo = i; hi = i; }
+          else if (v >= 2 && collected[v - 2] < need[v - 2]) { counts[v - 2]++; gems++; }
+        }
+        add('col', j + 1, m, hi - lo + 1 === m, counts, gems);
+      }
+      list.sort(function (a, b) { return b.sc - a.sc; });
+      return list.slice(0, 2);
+    }
+
+    function evaluate(board, collected, placedCount, unplaced) {
+      var prog = 0, k;
+      for (k = 0; k < NC; k++) prog += Math.min(collected[k], need[k]);
+      var s = prog * 1000;
+      if (needTotal > 0 && prog >= needTotal) s += 100000 + (P - placedCount) * 500;
+      s -= unplaced * 20000;
+      var rf = new Array(R).fill(0), cf = new Array(C).fill(0), i, j, empties = 0, iso = 0, near = 0;
+      for (i = 0; i < R; i++) for (j = 0; j < C; j++) if (board[i * C + j]) { rf[i]++; cf[j]++; }
+      for (i = 0; i < R; i++) for (j = 0; j < C; j++) {
+        var v = board[i * C + j];
+        if (!v) {
+          empties++;
+          var free = (i > 0 && !board[(i - 1) * C + j]) || (i < R - 1 && !board[(i + 1) * C + j]) ||
+                     (j > 0 && !board[i * C + j - 1]) || (j < C - 1 && !board[i * C + j + 1]);
+          if (!free) iso++;
+        } else if (v >= 2 && collected[v - 2] < need[v - 2]) {
+          var f = Math.max(rf[i] / C, cf[j] / R);
+          near += f * f * 8;
+        }
+      }
+      return s + empties * 2 - iso * 4 + near + setupScore(board, collected);
+    }
+
+    var best = { score: -Infinity, steps: null, board: null, collected: null };
+    var nodes = 0, timedOut = false, deadline = Date.now() + 8000, visited = new Set();
+
+    function leaf(board, collected, steps, placedCount) {
+      var sc = evaluate(board, collected, placedCount, P - placedCount);
+      if (sc > best.score) best = { score: sc, steps: steps, board: board, collected: collected };
+    }
+
+    function dfs(board, used, usedCount, collected, steps) {
+      if (timedOut) return;
+      if (++nodes % 2000 === 0 && Date.now() > deadline) { timedOut = true; return; }
+      var key = board.join('') + '|' + used + '|' + collected.join(',');
+      if (visited.has(key)) return;
+      visited.add(key);
+      var placedAny = false;
+      for (var i = 0; i < P; i++) {
+        if ((used >> i) & 1) continue;
+        var dup = false;
+        for (var j = 0; j < i; j++) if (keys[j] === keys[i] && !((used >> j) & 1)) { dup = true; break; }
+        if (dup) continue;
+        var list = plc[i];
+        for (var q = 0; q < list.length; q++) {
+          var p = list[q], ok = true, k;
+          for (k = 0; k < p.idx.length; k++) if (board[p.idx[k]]) { ok = false; break; }
+          if (!ok) continue;
+          placedAny = true;
+          var nb = board.slice();
+          for (k = 0; k < p.idx.length; k++) { var pv0 = p.vals[k]; if (pv0 >= 2 && collected[pv0 - 2] >= need[pv0 - 2]) pv0 = 1; nb[p.idx[k]] = pv0; }
+          var dr = [], dc = [], x, y;
+          for (x = 0; x < p.rows.length; x++) {
+            var rr = p.rows[x], f = true;
+            for (y = 0; y < C; y++) if (!nb[rr * C + y]) { f = false; break; }
+            if (f) dr.push(rr);
+          }
+          for (x = 0; x < p.cols.length; x++) {
+            var cc = p.cols[x], f2 = true;
+            for (y = 0; y < R; y++) if (!nb[y * C + cc]) { f2 = false; break; }
+            if (f2) dc.push(cc);
+          }
+          var placed = (dr.length || dc.length) ? nb.slice() : nb;
+          var gain = [0, 0, 0, 0];
+          dr.forEach(function (rw) {
+            for (var z = 0; z < C; z++) { var v = nb[rw * C + z]; if (v >= 2) gain[v - 2]++; nb[rw * C + z] = 0; }
+          });
+          dc.forEach(function (cl) {
+            for (var z = 0; z < R; z++) { var v2 = nb[z * C + cl]; if (v2 >= 2) gain[v2 - 2]++; nb[z * C + cl] = 0; }
+          });
+          var ncol = [], prog = 0, m;
+          for (m = 0; m < NC; m++) { ncol[m] = Math.min(need[m], collected[m] + gain[m]); prog += ncol[m]; }
+          var doneNow = [];
+          for (m = 0; m < NC; m++) if (collected[m] < need[m] && ncol[m] >= need[m]) {
+            doneNow.push(m);
+            for (var zz = 0; zz < N; zz++) if (nb[zz] === m + 2) nb[zz] = 1;
+          }
+          var step = { piece: orig[i], oi: p.oi, r0: p.r0, c0: p.c0, idx: p.idx, placed: placed, dr: dr, dc: dc, gain: gain, done: doneNow };
+          var nsteps = steps.concat([step]);
+          if (needTotal > 0 && prog >= needTotal) { leaf(nb, ncol, nsteps, usedCount + 1); continue; }
+          if (usedCount + 1 === P) { leaf(nb, ncol, nsteps, P); continue; }
+          dfs(nb, used | (1 << i), usedCount + 1, ncol, nsteps);
+          if (timedOut) return;
+        }
+      }
+      if (!placedAny && steps.length) leaf(board, collected, steps, usedCount);
+    }
+
+    dfs(board0, 0, 0, [0, 0, 0, 0], []);
+    if (!best.steps) return { errKey: 'errNoPlace' };
+    return { next: nextHints(best.board, best.collected), steps: best.steps, board: best.board, board0: board0, collected: best.collected, need: need, R: R, C: C, P: P, timedOut: timedOut };
+  }
+
+  function fmtHint(h) {
+    var parts = [];
+    for (var q = 0; q < NC; q++) if (h.counts[q] > 0) parts.push(COLORS[q] + ' ' + h.counts[q]);
+    return t('hintFmt', { label: t(h.kind === 'row' ? 'hintRow' : 'hintCol', { n: h.n }), parts: parts.join(' \u00b7 '), m: h.m });
+  }
+
+  function gainsNode(g) {
+    var box = el('div', 'gains'), any = false;
+    for (var k = 0; k < NC; k++) if (g[k] > 0) {
+      any = true;
+      var s = el('span');
+      s.appendChild(el('i', 'dia v' + (k + 2)));
+      s.appendChild(document.createTextNode(COLORS[k] + ' ' + g[k]));
+      box.appendChild(s);
+    }
+    if (!any) box.appendChild(el('span', null, t('noClear')));
+    return box;
+  }
+
+  function renderResult(res) {
+    lastRes = res;
+    var host = $('#steps');
+    host.innerHTML = '';
+    var R = res.R, C = res.C;
+    res.steps.forEach(function (s, n) {
+      var card = el('div', 'step');
+      card.appendChild(el('h3', null, t('stepTitle', { n: n + 1, p: s.piece })));
+      var mini = el('div', 'mini');
+      mini.style.gridTemplateColumns = 'repeat(' + C + ', 1fr)';
+      for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+        var k = r * C + c, v = s.placed[k];
+        var cls = cellClass(v);
+        if (s.idx.indexOf(k) !== -1) cls += ' n';
+        if (s.dr.indexOf(r) !== -1 || s.dc.indexOf(c) !== -1) cls += ' d';
+        mini.appendChild(el('span', cls.trim()));
+      }
+      card.appendChild(mini);
+      card.appendChild(el('p', null, t('stepPlace', { r: s.r0 + 1, c: s.c0 + 1 })));
+      card.appendChild(gainsNode(s.gain));
+      host.appendChild(card);
+    });
+    var parts = [], left = 0, k2;
+    for (k2 = 0; k2 < NC; k2++) {
+      var rem = res.need[k2] - res.collected[k2];
+      left += rem;
+      if (res.need[k2] > 0) parts.push(COLORS[k2] + ' ' + rem);
+    }
+    var used = res.steps.length;
+    var tot = state.moves + used;
+    var msg;
+    if (left === 0) msg = t('msgDone', { u: used, t: tot });
+    else msg = t('msgRemain', { parts: parts.join(' \u00b7 '), u: used, t: tot });
+    if (left === 0 && used < res.P) msg += t('msgSkip');
+    else if (used < res.P) msg += t('msgNoSpace');
+    if (res.timedOut) msg += t('msgTimeout');
+    setStatus(msg);
+    res.summary = msg;
+    $('#legend').hidden = false;
+    $('#applyBox').hidden = false;
+    last = { board: res.board, rem: res.need.map(function (n, i) { return n - res.collected[i]; }), used: used, R: R, C: C, steps: res.steps };
+    ghostsOn = true;
+    $('#gbText').textContent = msg;
+    var nx = $('#gbNext');
+    if (res.next && res.next.length) { nx.textContent = t('nextLines', { list: res.next.map(fmtHint).join(' / ') }); nx.hidden = false; }
+    else nx.hidden = true;
+    $('#ghToggle').textContent = t('hideRec');
+    $('#ghostBar').hidden = false;
+    renderBoard();
+  }
+
+  $('#solve').addEventListener('click', function () {
+    var btn = $('#solve');
+    btn.disabled = true;
+    clearResult();
+    setStatusFn(function () { return t('calc'); });
+    setTimeout(function () {
+      try {
+        var res = solve();
+        if (res.errKey) setStatusFn(function () { return t(res.errKey); }, true);
+        else { renderResult(res); $('#board').scrollIntoView({ block: 'center' }); }
+      } catch (err) {
+        setStatusFn(function () { return t('errCalc'); }, true);
+      }
+      btn.disabled = false;
+    }, 30);
+  });
+
+  function applyRec() {
+    if (!last) return;
+    history.push(snap());
+    if (history.length > 10) history.shift();
+    for (var r = 0; r < last.R; r++) for (var c = 0; c < last.C; c++) state.board[r][c] = last.board[r * last.C + c];
+    state.need = last.rem.slice();
+    state.moves += last.used;
+    state.pieces = [emptyPiece(), emptyPiece(), emptyPiece()];
+    renderGoals(); renderBoard(); renderPieces(); clearResult();
+    setStatusFn(function () { return t('applied'); });
+    updateUndo();
+    $('#pieces').scrollIntoView({ block: 'center' });
+  }
+  $('#undo').addEventListener('click', function () {
+    var prev = history.pop();
+    if (!prev) return;
+    state.board = prev.board; state.pieces = prev.pieces; state.need = prev.need; state.moves = prev.moves;
+    renderGoals(); renderBoard(); renderPieces(); clearResult();
+    setStatusFn(function () { return t('undone'); });
+    updateUndo();
+  });
+  $('#apply').addEventListener('click', applyRec);
+  $('#apply2').addEventListener('click', applyRec);
+  $('#ghToggle').addEventListener('click', function () {
+    ghostsOn = !ghostsOn;
+    $('#ghToggle').textContent = ghostsOn ? t('hideRec') : t('showRec');
+    renderBoard();
+  });
+
+  function applyLang(l) {
+    lang = l;
+    try { localStorage.setItem('gms-lang', l); } catch (e) { /* 저장소를 쓸 수 없어도 동작해요 */ }
+    document.documentElement.lang = l === 'zh' ? 'zh-CN' : l;
+    document.title = t('title');
+    COLORS.length = 0;
+    var k;
+    for (k = 0; k < NC; k++) COLORS.push(t('col' + k));
+    BRUSH[0].label = t('b0'); BRUSH[1].label = t('b1');
+    for (k = 0; k < NC; k++) BRUSH[k + 2].label = COLORS[k];
+    document.querySelectorAll('[data-i18n]').forEach(function (n) { n.textContent = t(n.getAttribute('data-i18n')); });
+    document.querySelectorAll('[data-i18n-html]').forEach(function (n) { n.innerHTML = t(n.getAttribute('data-i18n-html')); });
+    document.querySelectorAll('[data-i18n-aria]').forEach(function (n) { n.setAttribute('aria-label', t(n.getAttribute('data-i18n-aria'))); });
+    $('#langSel').value = l;
+    renderBrushes(); renderBoard(); renderPieces(); renderGoals();
+    $('#ghToggle').textContent = ghostsOn ? t('hideRec') : t('showRec');
+    refreshStatus();
+    if (lastRes) {
+      var keep = ghostsOn;
+      renderResult(lastRes);
+      ghostsOn = keep;
+      $('#ghToggle').textContent = ghostsOn ? t('hideRec') : t('showRec');
+      renderBoard();
+    }
+  }
+
+  initDefaults();
+  loadState();
+  LANGS.forEach(function (x) {
+    var o = el('option', null, x[1]);
+    o.value = x[0];
+    $('#langSel').appendChild(o);
+  });
+  $('#langSel').addEventListener('change', function (e) { applyLang(e.target.value); });
+  applyLang(detectLang());
+})();
+</script>
+</body>
+</html>
